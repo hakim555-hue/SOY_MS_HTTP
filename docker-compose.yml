@@ -1,4 +1,3 @@
-version: "3"
 services:
 
   front:
@@ -11,8 +10,8 @@ services:
       - "3001:8000"
     env_file:
       - variables.env
-    
-
+    networks:
+      - appnet
 
   postgres:
     container_name: postgres
@@ -26,11 +25,12 @@ services:
     networks:
       - appnet
     volumes:
-      - ./soy-db/v5-soy-db:/var/lib/postgresql/data 
+      - pgdata:/var/lib/postgresql/data
 
   gateway:
     container_name: gateway
-    image: icws24submission/gateway_icws24
+    build:
+      context: ./gateway-http
     security_opt:
       - no-new-privileges:true
     restart: always
@@ -46,7 +46,8 @@ services:
 
   ms-exercise:
     container_name: ms-exercise
-    image: icws24submission/exercise_icws24
+    build:
+      context: ./exercise-http
     security_opt:
       - no-new-privileges:true
     restart: always
@@ -59,7 +60,8 @@ services:
 
   ms-other:
     container_name: ms-other
-    image: icws24submission/other_icws24
+    build:
+      context: ./other-http
     security_opt:
       - no-new-privileges:true
     restart: always
@@ -72,8 +74,7 @@ services:
 
 networks:
   appnet:
-    external: true
+    driver: bridge
 
 volumes:
-   v5-plage-db:  
-   #external: true
+  pgdata:

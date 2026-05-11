@@ -1,8 +1,10 @@
-
 const express = require("express");
 const app = express();
 const cors = require('cors');
 const httpProxy = require('http-proxy');
+const jwt = require("jsonwebtoken");
+
+const INTER_SERVICE_SECRET = process.env.INTER_SERVICE_SECRET;
 
 app.use(
   cors({
@@ -12,20 +14,41 @@ app.use(
   })
 );
 
-
-
 var apiProxy = httpProxy.createProxyServer();
 
+function addServiceToken(req) {
+  if (!INTER_SERVICE_SECRET) {
+    console.error("INTER_SERVICE_SECRET manquant !");
+    return;
+  }
+  const token = jwt.sign(
+    { iss: "gateway", aud: "internal-service" },
+    INTER_SERVICE_SECRET,
+    { expiresIn: "30s" }
+  );
+  req.headers["x-service-token"] = token;
+  console.log("Token généré :", token);
+}
+
 app.use("/api/exercise-production", function (req, res) {
-  apiProxy.web(req, res, { target: 'http://ms-exercise:' + process.env.PORT + "/api/exercise-production" }, (err) => {})
+  addServiceToken(req);
+  apiProxy.web(req, res, {
+    target: 'http://ms-exercise:' + process.env.PORT + "/api/exercise-production"
+  }, (err) => {});
 });
 
 app.use("/api/student-statement", function (req, res) {
-  apiProxy.web(req, res, { target: 'http://ms-exercise:' + process.env.PORT + "/api/student-statement" }, (err) => {})
+  addServiceToken(req);
+  apiProxy.web(req, res, {
+    target: 'http://ms-exercise:' + process.env.PORT + "/api/student-statement"
+  }, (err) => {});
 });
 
 app.use("/", function (req, res) {
-  apiProxy.web(req, res, { target: 'http://ms-other:' + process.env.PORT }, (err) => {})
+  addServiceToken(req);
+  apiProxy.web(req, res, {
+    target: 'http://ms-other:' + process.env.PORT
+  }, (err) => {});
 });
 
 app.listen(8080, () => {

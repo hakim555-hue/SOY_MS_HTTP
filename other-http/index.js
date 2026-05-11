@@ -1,5 +1,3 @@
-// Much better!
-
 const cluster = require('cluster');
 
 if (cluster.isMaster) {
@@ -12,12 +10,8 @@ if (cluster.isMaster) {
 
 } else {
 
-
   const domain = require('domain');
 
-  
-
-  // !!! order below is important !
   const debug = require("debug")("index");
   const express = require("express");
   const fileUpload = require("express-fileupload");
@@ -32,19 +26,12 @@ if (cluster.isMaster) {
     ssl: false
   });
 
-  // Config files
   const ConfServ = require("./config/ConfServ");
   const i18n = require("i18n-2");
-
-  // Controllers
-  //const ControllerCourse = require('./controller/ControllerCourse')
-  //const ControllerExercise = require('./controller/ControllerExercise')
-  //const ControllerFichier = require('./controller/ControllerFichier')
   const ControllerLibrary = require("./controller/ControllerLibrary");
-
   const access = require("./middlewares/accessControl");
+  const checkServiceToken = require("./middlewares/checkServiceToken"); // Zero Trust
 
-  //Used for swagger
   const swaggerUI = require("swagger-ui-express");
   const openApiDocumentation = require("./doc/API/openApiDocumentation");
 
@@ -55,63 +42,37 @@ if (cluster.isMaster) {
     const d = domain.create();
     d.on('error', (er) => {
       console.error(`error ${er.stack}`);
-
-     
-
       try {
-        // Make sure we close down within 30 seconds
         console.error("Killing process in 30s")
         const killtimer = setTimeout(() => {
           process.exit(1);
         }, 30000);
-        // But don't keep the process open just for that!
         killtimer.unref();
-
-        // Stop taking new requests.
         server.close();
-
-        // 'disconnect' in the cluster primary, and then it will fork
-        // a new worker.
         cluster.worker.disconnect();
-
-        // Try to send an error to the request that triggered the problem
         res.statusCode = 500;
         res.end('Oops, there was a problem!');
       } catch (er2) {
-        // Oh well, not much we can do at this point.
         console.error(`Error sending 500! ${er2.stack}`);
       }
     });
-
-    // Because req and res were created before this domain existed,
-    // we need to explicitly add them.
-    // See the explanation of implicit vs explicit binding below.
     d.add(req);
     d.add(res);
-
-    // Now run the handler function in the domain.
-    d.run(() => {
-      next()
-    });
+    d.run(() => { next() });
   })
 
-  //Used for swagger
   app.use("/api-docs", swaggerUI.serve, swaggerUI.setup(openApiDocumentation));
 
-
-  // Init static routes
   app.use("/css", express.static(__dirname + "/static/css"));
   app.use("/img", express.static(__dirname + "/static/img"));
   app.use("/js", express.static(__dirname + "/static/js"));
   app.use("/files", express.static(__dirname + "/static/files"));
 
-  //CORS:
   app.all("*", (req, res, next) => {
     debug("origin " + req.get('origin'))
     next()
   })
 
-  // Debug function
   app.all("*", function (req, rep, next) {
     debug(req.method + " " + req.url);
     next();
@@ -119,105 +80,67 @@ if (cluster.isMaster) {
 
   app.use(
     cors({
-      origin: process.env.REACT_APP_FRONT_URL.slice(0, -1), // remove slash at the end
+      origin: process.env.REACT_APP_FRONT_URL.slice(0, -1),
       methods: ["POST", "PUT", "GET", "DELETE", "OPTIONS", "HEAD"],
       credentials: true
     })
   );
 
-  
-  // MORE RECENT Middleware PARSERS
-  app.use(express.json({ limit: "1mb" })); // <==== parse request body as JSON
-  app.use(
-    express.urlencoded({
-      extended: true
-    })
-  );
-
+  app.use(express.json({ limit: "1mb" }));
+  app.use(express.urlencoded({ extended: true }));
   app.use(fileUpload());
 
   i18n.expressBind(app, {
-
-    // setup some locales - other locales default to vi silently
     locales: ["en", "fr"],
-
-    // set the default locale
     defaultLocale: "en",
     directory: "./locale",
     extension: ".json"
   });
 
-  // Application middleware
-  // This middleware will fire for any incoming request
-
-  // Setting a default locale
   app.use(function (req, res, next) {
     req.i18n.setLocale(req.headers["content-language"]);
     next();
   });
 
-
   debug("Booting MS-OTHER part");
 
-  // ---------- Errors routes ----------
+  app.use(checkServiceToken);
+
   app.use(require("./routes/errors"));
 
-  // ---------- User Routes ----------
   app.use(require("./routes/userRoutes"));
 
-  // ---------- Course routes ----------
-  //app.use(require('./routes/courses'));
-
-  // ---------- E-Mail routes ----------
-  // used to email users (at account creation, forgotten passwd, ...)
   app.use(require("./routes/email"));
 
-  // ---------- Exercise routes ----------
   app.use(require("./routes/exercises"));
 
-  // ---------- Admin routes ----------
   app.use(require("./routes/admin"));
 
-  // ========== Download ==========
-  // Get PlageLib.py
   app.get("/lib/getPlagePythonLib", function (req, res) {
     ControllerLibrary.getPlageLibPy(req, res);
   });
 
-  // ---------- Help sections ---------
   app.use(require("./routes/help"));
 
-
-
-  // ---------- PlageSession ----------
   app.use(require("./routes/plageSession"));
 
-  // ---------- Profile ----------
   app.use(require("./routes/profile"));
 
-  // ---------- Sequence Routes ----------
   app.use(require("./routes/sequence"));
 
-  // ---------- Skills Routes ----------
   app.use(require("./routes/skills"));
 
-  // ---------- Lang Routes ----------
   app.use(require('./routes/lang'))
 
-  // ---------- Feedback Routes ----------
-  app.use( require( './routes/feedback'))
+  app.use(require('./routes/feedback'))
 
-  // ---------- Thanks Routes ----------
-  app.use( (require('./routes/thanks')))
-  
-  // ---------- No Cookies ----------
+  app.use(require('./routes/thanks'))
+
   app.get("/noCookies", function (req, res) {
     res.render("common/noCookies.ejs");
   });
 
- 
-  // ---------- Start server ----------
   app.listen(process.env.MS_PORT || 5001, function () {
-    console.log("ICWS 2024 App listening on port " + (process.env.MS_PORT || 5001));    
+    console.log("ICWS 2024 App listening on port " + (process.env.MS_PORT || 5001));
   });
 }
